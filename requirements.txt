@@ -1,0 +1,25 @@
+# Core RAG
+langchain # Core framework - controls retrieval + generation
+langchain-huggingface # Integration for HuggingFace models
+faiss-cpu # Facebook's vectore similarity search for fast efficient vector storage
+sentence-transformers # Creating setence/document embeddings for semantic search
+
+# ML Backend
+torch # PyTorch which is required by setence-transformers
+# Document Processing
+transformers # HuggingFace's transformer model library
+
+# Document Processing
+pypdf # PDF text extraction library - processes papers in PDF format
+python-docx # for docx documents
+docx2txt
+
+# Utilities
+python-dotenv # Loads variables from .env file to secure API key
+tqdm # Progress bars for PDF processing
+pandas # Data manipulation for storage and analysis
+sentencepiece # Text tokenization library for model - prevents errors
+accelerate # Speeds up model
+
+# Web Interface
+streamlit # For frontend to demo
