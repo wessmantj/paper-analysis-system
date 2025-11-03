@@ -1,7 +1,10 @@
 # This is where the PDF files get text extracted -> Parsed Metadata -> Stored in SQLite -> and Logged
 
+import os
 import sqlite3
 from pypdf import PdfReader
+import logging
+from datetime import datetime
 
 # Create the documents table if it doesn't exist
 def create_database(db_path: str):
@@ -326,6 +329,56 @@ def get_paper_by_id(db_path: str, paper_id: int) -> dict:
     con.close()
 
     return paper
+
+# Logging functions to track pipeline actions
+
+# Configure logger with file and console output
+def setup_logger(name: str, log_file: str = None) -> logging.Logger:
+    """
+    Configure logger with file and console output
+    
+    Args:
+        name: Logger name (usually module name like 'PaperPipeline')
+        log_file: Optional path to log file (e.g., 'logs/pipeline.log')
+        
+    Returns:
+        Configured logger instance
+        
+    Example:
+        logger = setup_logger('PaperPipeline', 'logs/pipeline.log')
+        logger.info('Processing started')
+        logger.error('Something went wrong')
+    """
+
+    # Create logger
+    logger = logging.getLogger(name) # Creates or retreives logger
+
+    # Set logging level
+    logger.setLevel(logging.DEBUG)
+
+    # Create formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # This controls how the messages look
+    # %(asctime)s   → Timestamp 
+    # %(name)s      → Logger name 
+    # %(levelname)s → Level (INFO, ERROR, etc.)
+    # %(message)s   → Your actual message
+
+    # Console handler - prints to terminal
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO) # Only INFO and above shared to console
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # StreamHandler outputs to terminal
+    # Set level INFO to avoid cluttering with messages
+
+    return logger
+
 
 
 
