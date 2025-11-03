@@ -104,7 +104,88 @@ def parse_metadata(full_text: str) -> dict:
 
     # Remove whitespace and empty lines
     line = [line.strip() for line in lines if line.strip()] # strip90 removes spaces/tabs from beginning and end
+    
+    # Debug code for locating metadata
 
+    title_lines = []
+    start_index = 0
+
+    # Skip pubmed download headers
+    if lines and ('RESEARCH' in lines[0].upper() or 'ARTICLE' in lines[0].upper() or 'ACCESS' in lines[0].upper()):
+        start_index = 1
+        
+    # Collect title lines 1-3 lines before author name
+    for i in range(start_index, min(start_index + 5, len(lines))):
+        line = lines[i]
+        
+        # Stop if author line is hit
+        if any(char.isdigit() for char in line) and ('*' in line or '@' in line):
+            break
+        # Stop if line says 'Abstract'
+        if line.lower() == 'abstract':
+            break
+        if len(line) > 10:
+            title_lines.append(line)
+
+    # Combine title lines
+    metadata['title'] = ' '.join(title_lines) if title_lines else lines[0] if lines else '' # Joined together with spaces for correct formatting
+
+    # Extract authors - look for line with numbers or special characters
+    author_lines = []
+
+    for i, line in enumerate(lines[:20]): # Check first 20 lines
+        # Author lines usually have numbers, astericks, commas
+        if any(char.isdigit() for char in line) and (',' in line or '*' in line):
+            author_lines = [line]
+
+            if i + 1 < len(lines) and 'and' in lines[i +1].lower():
+                author_lines.append(lines[i + 1])
+            metadata['authors'] = ' '.join(author_lines)
+            break
+    
+    # Outsorced author detection idea but looks for numerical affiltions ( 1, 2, *)
+    # and patterns for seperating names
+
+    # Extract abstract - find "abstract" keyword and get text till next section
+    text_lower = full_text.lower()
+
+    # Find header
+    abstract_index = -1
+    for i, line in enumerate(lines):
+        if line.lower() == 'abstract':
+            abstract_index = i
+            break
+
+    if abstract_index != -1 and abstract_index + 1 < len(lines):
+        # Collect lines after abstract until next section header
+        abstract_lines = []
+
+        section_headers = ['background', 'introduction', 'methods', 'keywords','correspondence']
+
+        for i in range(abstract_index + 1, len(lines)):
+            line = lines[i]
+            line_lower = line.lower()
+
+            # Stop at section headers
+            if any(header in line_lower for header in section_headers):
+                break
+
+            # Stop at short lines/ possible headers
+            if len(line) < 20:
+                continue
+
+            abstract_lines.append(line)
+
+        if abstract_lines:
+            abstract_text = ' '.join(abstract_lines)
+
+            # Clean up
+            abstract_text = abstract_text.strip()
+            
+            # Limit length
+            if len(abstract_text) > 100:  # At least 100 chars
+                metadata['abstract'] = abstract_text[:3000]  # Max 3000 chars
+    '''
     # Extract title - usually first non-empty line with > 10 length
     for line in lines:
         if len(line) > 10: 
@@ -142,7 +223,7 @@ def parse_metadata(full_text: str) -> dict:
                 # Limit length from 100-500 words
                 if len(abstract_text) > 50:
                     metadata['abstract'] = abstract_text[:2000]
-
+    '''
     return metadata
 
 

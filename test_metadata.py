@@ -3,7 +3,7 @@
 from src.pipeline import extract_pdf_text, parse_metadata
 
 # Extract text from a PDF
-result = extract_pdf_text('data/raw/12889_2020_Article_8969.pdf')
+result = extract_pdf_text('data/raw/PHY2-5-e13503.pdf')
 
 if result['success']:
     print("✓ PDF text extracted\n")
