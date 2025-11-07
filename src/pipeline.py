@@ -14,7 +14,7 @@ def create_database(db_path: str):
         db_path: Path to SQLite database file (e.g., 'data/documents.db')
     '''
 
-    con = sqlite3.connect('documents.db') # creates/connects to database
+    con = sqlite3.connect(db_path) # creates/connects to database
     cur = con.cursor() # allows command execution in db
 
     cur.execute('''CREATE TABLE IF NOT EXISTS documents (
@@ -24,7 +24,7 @@ def create_database(db_path: str):
                 authors TEXT,
                 abstract TEXT,
                 full_text TEXT,
-                page_counter INTEGER,
+                page_count INTEGER,
                 file_size INTEGER,
                 processed_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 status TEXT
@@ -216,7 +216,7 @@ def insert_paper(db_path: str, paper_data: dict):
     cur = con.cursor()
 
     # Prepared INSERT SQL with placeholders
-    sql = '''("INSERT INTO documents
+    sql = '''INSERT INTO documents
                 (filename, title, authors, abstract, full_text, page_count, file_size, status)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
     
@@ -315,7 +315,7 @@ def get_paper_by_id(db_path: str, paper_id: int) -> dict:
     cur = con.cursor()
 
     # SELECT all columns from database where ID matches input
-    cur.execute("SELECT * FROM documents WHERE id = ?", (paper_id))
+    cur.execute("SELECT * FROM documents WHERE id = ?", (paper_id,))
 
     # Instead of featching all, only getting one paper/row in database
     row = cur.fetchone()
@@ -378,6 +378,156 @@ def setup_logger(name: str, log_file: str = None) -> logging.Logger:
     # Set level INFO to avoid cluttering with messages
 
     return logger
+
+# Main pipeline for proccessing research papers
+class PaperPipeline: 
+
+    # Initialize pipeline 
+    def __init__(self, data_dir: str, db_path: str, log_file: str = None):
+        """
+        Args:
+            data_dir: Directory containing PDF files (e.g., 'data/raw')
+            db_path: Path to SQLite database (e.g., 'data/documents.db')
+            log_file: Optional log file path (e.g., 'logs/pipeline.log')
+        
+        Example:
+            pipeline = PaperPipeline('data/raw', 'data/documents.db', 'logs/pipeline.log')
+        """
+
+        # Store parameters as variables accessable by all methods in class
+        self.data_dir = data_dir
+        self.db_path = db_path
+
+        # Logging setup
+        self.logger = setup_logger('PaperPipeline', log_file)
+        self.logger.info(f"Initializing PaperPipeline")
+        self.logger.info(f"Data directory: {data_dir}")
+        self.logger.info(f"Database: {db_path}")
+
+        # Create database if it doesn't exist
+        create_database(self.db_path)
+        self.logger.info("Database Ready")
+
+        # Initialize stat tracking
+        self.stats = {
+            'total': 0,
+            'successful': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+    
+    # Process single PDF file
+    def process_single_pdf(self, pdf_path: str) -> bool:
+
+        # Get file name
+        filename = os.path.basename(pdf_path)
+
+        self.logger.info(f"Processing: {filename}")
+
+        # Extract PDF text
+        result = extract_pdf_text(pdf_path)
+
+        # If failure, log error, and return False
+        if not result['success']:
+            self.logger.error(f"Failed to extract {filename}: {result['error']}")
+            self.stats['failed'] += 1
+            self.stats['errors'].append({'file': filename, 'error': result['error']})
+            return False
+        
+        # Parse metadata with title length limit
+        metadata = parse_metadata(result['text'])
+        self.logger.info(f"Parsed metadata - Title: {metadata['title'][:50]}")
+
+        # Prepare paper data for database
+        paper_data = {
+            'filename': filename,
+            'title': metadata['title'],
+            'authors': metadata['authors'],
+            'abstract': metadata['abstract'],
+            'full_text': result['text'],
+            'page_count': result['page_count'],
+            'file_size': os.path.getsize(pdf_path),
+            'status': 'SUCCESS'
+        }
+
+        # Insert into database
+        try:
+            paper_id = insert_paper(self.db_path, paper_data)
+            self.logger.info(f"Inserted {filename} with ID: {paper_id}")
+            self.stats['successful'] += 1
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Database error for {filename}: {str(e)}")
+            self.stats['failed'] += 1
+            self.stats['errors'].append({'file': filename, 'error': str(e)})
+            return False
+        
+    # Database inserts should be wrapped in try/except so errors don't crash the whole pipeline
+
+    #Process all PDF's in data directory
+    def process_all_pdfs(self):
+        """
+            
+            Uses tqdm for progress bar.
+            Logs summary statistics at the end.
+            
+            Example:
+                pipeline = PaperPipeline('data/raw', 'data/documents.db')
+                pipeline.process_all_pdfs()
+            """
+        from tqdm import tqdm
+
+        # Find all PDF files
+        pdf_files = [f for f in os.listdir(self.data_dir) if f.endswith('.pdf')]
+
+        # os.listdir returns all files in directory and is filtered to only get files ending in .pdf
+
+        # Update logs with found PDFs or error notice
+        self.stats['total'] = len(pdf_files)
+        self.logger.info(f"Found {len(pdf_files)} PDF files to process")
+
+        if len(pdf_files) == 0:
+            self.logger.warning(f"No PDF files found in {self.data_dir}")
+            return
+        
+        # Process each PDF with progress bar or TQDM
+        for filename in tqdm(pdf_files, desc="Processing PDFs"):
+            full_path = os.path.join(self.data_dir, filename)
+            # os.path.join combines directory + filename
+            
+            self.process_single_pdf(full_path)
+            # tqdm wraps the loop to show progress and desc= sets the description text
+
+        # Log final statistics
+        self.logger.info("="*60)
+        self.logger.info("PROCESSING COMPLETE")
+        self.logger.info(f"Total files: {self.stats['total']}")
+        self.logger.info(f"Successful: {self.stats['successful']}")
+        self.logger.info(f"Failed: {self.stats['failed']}")
+        
+        if self.stats['errors']:
+            self.logger.info("Errors encountered:")
+            for error in self.stats['errors']:
+                self.logger.error(f"  {error['file']}: {error['error']}")
+        
+        self.logger.info("="*60)
+
+    # Get processing stats
+    def get_statistics(self) -> dict:
+        """
+
+        Returns:
+            dict with keys: total, successful, failed, erros
+
+        Example:
+            stats = pipeiline.get_stats()
+            print(f"Processed {stats['successful']} papers" )
+
+                
+        """
+        return self.stats.copy()
 
 
 
