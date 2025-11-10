@@ -5,6 +5,27 @@ import sqlite3
 from pypdf import PdfReader
 import logging
 from datetime import datetime
+import numpy as np # Array operations for embedding
+from sentence_transformers import SentenceTransformer 
+import faiss
+
+# Global embedding model - only loads once and can be used everywhere
+EMBEDDING_MODEL = None
+
+def get_embedding_model():
+    """
+    Get or create the embedding model (singleton pattern)
+    
+    Returns:
+        SentenceTransformer model
+    """
+    global EMBEDDING_MODEL
+    if EMBEDDING_MODEL is None:
+        EMBEDDING_MODEL = SentenceTransformer('all-MiniLM-L6-v2')
+    return EMBEDDING_MODEL
+
+# This call loads the model in 2-3 seconds then can get used instanly by other functions
+    
 
 # Create the documents table if it doesn't exist
 def create_database(db_path: str):
@@ -379,6 +400,135 @@ def setup_logger(name: str, log_file: str = None) -> logging.Logger:
 
     return logger
 
+# RAG Implimentation - functions for retrieval, augementation and generation
+
+# Convert list of text chunks into embeddings
+def create_embeddings(texts: list) -> np.ndarray:
+    """
+    Args:
+        texts: List of text strings to embed
+
+    Returns:
+        numpy array of embeddings
+    """
+
+    # Get model from original load
+    model = get_embedding_model()
+
+    # Create embeddings
+    embeddings = model.encode(texts)
+    # model.encoe() takes list of strings and retunrs numpy array of shape (len(texts), 384) meaning each row is a 384-dimensional vector for one text
+
+    return embeddings
+
+    
+
+# Split text into overlapping chunks
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
+    """
+        Args:
+            text: Full text to chunk
+            chunk_size: Size of each chunk in characters
+            overlap: Overlap between chunks
+            
+        Returns:
+            List of text chunks
+        """
+    
+    chunks =[]
+    start = 0
+    step = chunk_size - overlap # How far to move each time
+
+    while start < len(text):
+        # Extract chunk from start to start + chunk_size
+        end = start + chunk_size
+        chunk = text[start:end]
+
+        # Moving 800 char forward each time, keeping 200 overlap
+
+        chunk.append(chunk)
+
+        # Move to next position
+        start += step
+
+
+    return chunks
+
+# Build FIASS vector store from papers
+def build_vector_store(paper_texts: list) -> tuple:
+    """
+    Args:
+        paper_texts: List of (paper_id, full_text) tuples
+
+    Returns:
+        (faiss_index, check_metadata) tuple
+        chunk_metadata: List of dicts with {paper_id, chunk_text, chunk_index}
+    
+    """
+
+    all_chunks = []
+    chunk_metadata = []
+
+    # Chunk all papers is step 1
+    for paper_id, text in paper_texts:
+        chunks = chunk_text(text)
+
+        for chunk_index, chunk_text_str in enumerate(chunks):
+            all_chunks.append(chunk_text_str)
+
+            chunk_metadata.append({
+                'paper_id': paper_id,
+                'chunk_text': chunk_text_str,
+                'chunk_index': chunk_index
+            })
+
+            # Stored metadata for each chunk
+            # When FAISS returns index 5, we can lookup the metadata[5]
+            # To see which paper and which chunk within that paper
+
+
+    print(f"Created {len(all_chunks)} chunks from {len(paper_texts)} papers")
+
+    # Create embeddings for all chunks is step 2
+    embeddings = create_embeddings(all_chunks)
+
+    print(f"Created embeddings whip shape: {embedding.shape}")
+    # embedding.shape = (num_chunks, 384) each row is embedding for one chunk
+
+    # Build FAISS index for step 3
+    dimension = embeddings.shape[1] # 384 for all-MiniLM
+
+    index = faiss.IndexFlatL2(dimension)
+
+    # IndexFlatL2 = brute force search using L2
+    # Flat means to checks each vector which is okay with our small amount of data
+
+    # FAISS requires float32
+    embeddings_float32 = embeddings.astype('float32')
+    index.add(embeddings_float32)
+
+    # add() inserts vectors into the index with an ID
+    # the ID's correspond to postions in the chunk_metatdata list
+
+    print(f"Built FAISS index with {index.ntotal} vectors")
+
+    return index, chunk_metadata
+
+
+
+# Query RAG system
+def query_rag(question: str, faiss_index, chunk_metadata: list, top_k: int = 5):
+    """
+    Args:
+        question: User's input
+        faiss_index: FAISS indec
+        chunk_metadata: chunk metadata
+        top_k: number of chunks to retrieve
+
+    Returns: 
+        List of relevent chunks with metadata
+    """
+
 # Main pipeline for proccessing research papers
 class PaperPipeline: 
 
@@ -528,8 +678,19 @@ class PaperPipeline:
                 
         """
         return self.stats.copy()
+    
+    # Build RAG index from all papers in database
+    def build_rag_index(self):
+
+        # Get all papers from db
+
+        # Build vector store
+
+        # Save index to self.faiss_index, self.chunkl_metadata
 
 
+    # Seach papers using RAG
+    def search(self, question: str, top_k: int = 5):
 
 
 
