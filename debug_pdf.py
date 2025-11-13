@@ -43,3 +43,4 @@ if result['success']:
             if pos != -1:
                 print(f"\n✓ Found '{keyword}' at position {pos}")
                 break
+

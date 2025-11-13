@@ -446,7 +446,7 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
 
         # Moving 800 char forward each time, keeping 200 overlap
 
-        chunk.append(chunk)
+        chunks.append(chunk)
 
         # Move to next position
         start += step
@@ -492,7 +492,7 @@ def build_vector_store(paper_texts: list) -> tuple:
     # Create embeddings for all chunks is step 2
     embeddings = create_embeddings(all_chunks)
 
-    print(f"Created embeddings whip shape: {embedding.shape}")
+    print(f"Created embeddings whip shape: {embeddings.shape}")
     # embedding.shape = (num_chunks, 384) each row is embedding for one chunk
 
     # Build FAISS index for step 3
@@ -528,6 +528,36 @@ def query_rag(question: str, faiss_index, chunk_metadata: list, top_k: int = 5):
     Returns: 
         List of relevent chunks with metadata
     """
+
+    # Embed the question
+    question_embedding = create_embeddings([question])
+
+    # Search FAISS index
+    question_embedding_float32 = question_embedding.astype('float32')
+
+    distances, indices = faiss_index.search(question_embedding_float32, top_k)
+
+    # Build results
+    results = []
+
+    for i in range(top_k):
+        chunk_id = indices[0][i] # Get chunk ID
+        distance = distances[0][i] # Get the distance
+
+        # Get metadata for this chunk
+        metadata = chunk_metadata[chunk_id]
+
+        results.append({
+            'paper_id': metadata['paper_id'],
+            'chunk_text': metadata['chunk_text'],
+            'chunk_index': metadata['chunk_index'],
+            'distance': float(distance) # Converts numpy float into python float
+
+        })
+
+    return results
+
+
 
 # Main pipeline for proccessing research papers
 class PaperPipeline: 
@@ -688,10 +718,38 @@ class PaperPipeline:
 
         # Save index to self.faiss_index, self.chunkl_metadata
 
+        self.logger.info("Building RAG index...")
+
+        # Get all papers from db
+        papers = get_all_papers(self.db_path)
+
+        if len(papers) == 0:
+            self.logger.warning("No papers in database to index")
+            return
+        
+        # Extract tuples of paper_id and full_text
+        paper_texts = [(paper['id'], paper['full_text']) for paper in papers]
+
+        self.logger.info(f"Indexing {len(paper_texts)} papers...")
+
+        # Build the vector store
+        self.faiss_index, self.chunk_metadata = build_vector_store(paper_texts)
+
+        self.logger.info(f"RAG index build with {len(self.chunk_metadata)} chunks")
 
     # Seach papers using RAG
     def search(self, question: str, top_k: int = 5):
+        if self.faiss_index is None:
+            self.logger.error("RAG index not build. Call build_rag_index() first")
+            return []
+        
+        self.logger.info(f"Searching for: {question}")
 
+        results = query_rag(question, self.faiss_index, self.chunk_metadata, top_k)
+
+        self.logger.info(f"Found {len(results)} results")
+
+        return results
 
 
 
