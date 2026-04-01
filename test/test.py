@@ -26,6 +26,6 @@ print(result['text'][-500:])
 # Test with file that doesn't exist
 print("\n" + "="*50)
 print("Testing error handling:")
-result2 = extract_pdf_text('data/raw/fake_file.pdf')
+result2 = extract_pdf_text('data/raw/2889_2020_Article_8969.pdf')
 print(f"Success: {result2['success']}")
 print(f"Error: {result2['error']}")
